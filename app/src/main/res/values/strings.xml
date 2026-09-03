@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">CSM Jam</string>
+    <style name="Theme.CSMJam" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:navigationBarColor">#121212</item>
+        <item name="android:windowBackground">#121212</item>
+    </style>
+</resources>

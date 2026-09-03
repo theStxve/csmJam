@@ -1,0 +1,65 @@
+# Gradle files
+.gradle/
+build/
+
+# Android Studio / IntelliJ files
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Local configuration files
+local.properties
+.gemini/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary build/log files
+*.log
+build_out*.txt
+install_out*.txt
+logcat_*.txt
+error.txt
+compile_error.txt
+yt_json.txt
+yt_page.html
+yt_search.html
+brace_out.txt
+maven.json
+maven2.json
+maven_search.json
+
+# Backup files
+*.bak
+*.swp
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Local scripts
+brace_check*.py
+find_quotes.py
+hex_check.py
+create_project.ps1
+
+# Antigravity Kit
+.agent/
+.gemini/
+
+# Security & Private Config
+google-services.json
+*.jks
+*.keystore
+local.properties
+
+# Build & Release Artifacts
+app/release/
+*.apk
+*.aab
+
+
+
