@@ -73,7 +73,7 @@ CSM 2.0 is a complete evolution from a simple audio streamer into a full-fledged
         ▼                     ▼                   ▼
 ┌──────────────┐      ┌──────────────┐     ┌──────────────┐
 │   Guest 1    │      │   Guest 2    │     │   Guest 3    │
-│ (Music Client)│     │ (Music Client)│    │ (Music Client)│
+│(Music Client)│      │(Music Client)│     │(Music Client)│
 └──────────────┘      └──────────────┘     └──────────────┘
 ```
 
