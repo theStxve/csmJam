@@ -18,6 +18,7 @@
   <img alt="Last commit" src="https://img.shields.io/github/last-commit/theStxve/csmJam?style=flat-square">
   <img alt="Code size" src="https://img.shields.io/github/languages/code-size/theStxve/csmJam?style=flat-square">
   <img alt="Stars" src="https://img.shields.io/github/stars/theStxve/csmJam?style=flat-square">
+  <a href="https://github.com/theStxve/csmJam/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/theStxve/csmJam/total?style=flat-square&label=downloads"></a>
 </p>
 
 > **CSM Jam** turns any group of smartphones into a synchronized, distributed surround-sound system and collaborative party console — **100% offline, decentralized, and with millisecond-level synchronization.**
