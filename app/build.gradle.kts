@@ -11,8 +11,8 @@ android {
         applicationId = "com.csm.jam"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 9
+        versionName = "3.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -23,6 +23,8 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Sideloading: signed with the local debug key. For the Play Store a real release key is needed.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -88,4 +90,8 @@ dependencies {
 
     // Color Palette extraction from album art
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // JVM tests for the session server (real org.json – the android.jar one is only a stub)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }

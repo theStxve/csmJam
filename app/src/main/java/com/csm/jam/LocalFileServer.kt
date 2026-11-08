@@ -14,13 +14,22 @@ class LocalFileServer(
     port: Int
 ) : NanoHTTPD(port) {
 
+    companion object {
+        private const val MAX_UPLOAD_BYTES = 200L * 1024 * 1024
+    }
+
     // ConcurrentHashMap: NanoHTTPD serves each request on a worker thread; we write from the UI thread.
     private val activeFiles = ConcurrentHashMap<String, Uri>()
     private val activeArtworks = ConcurrentHashMap<String, ByteArray>()
+    // Explicit MIME types for files that have no ContentProvider behind them (browser uploads)
+    private val activeMimeTypes = ConcurrentHashMap<String, String>()
+    private val uploadDir get() = java.io.File(context.cacheDir, "web_uploads")
 
     fun reset() {
         activeFiles.clear()
         activeArtworks.clear()
+        activeMimeTypes.clear()
+        uploadDir.listFiles()?.forEach { it.delete() }
     }
 
     fun hostFile(uri: Uri): Pair<String, Boolean> {
@@ -44,93 +53,63 @@ class LocalFileServer(
     }
 
     fun getFileUri(fileId: String): Uri? = activeFiles[fileId]
-    fun getArtwork(fileId: String): ByteArray? = activeArtworks[fileId]
+    fun getArtwork(fileId: String): ByteArray? = activeArtworks[fileId] ?: loadArtwork(fileId)
+
+    /** Artwork is re-extracted on demand after a session restore instead of blocking the restart. */
+    private fun loadArtwork(fileId: String): ByteArray? {
+        val uri = activeFiles[fileId] ?: return null
+        return try {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            val art = retriever.embeddedPicture
+            retriever.release()
+            art?.also { activeArtworks[fileId] = it }
+        } catch (_: Exception) { null }
+    }
+
+    /** id → uri/mime of every hosted file, for the session snapshot. */
+    fun snapshot(): org.json.JSONObject = org.json.JSONObject().apply {
+        activeFiles.forEach { (id, uri) ->
+            put(id, org.json.JSONObject().put("uri", uri.toString()).put("mime", activeMimeTypes[id] ?: org.json.JSONObject.NULL))
+        }
+    }
+
+    fun restore(files: org.json.JSONObject) {
+        files.keys().forEach { id ->
+            val o = files.getJSONObject(id)
+            activeFiles[id] = Uri.parse(o.getString("uri"))
+            if (!o.isNull("mime")) activeMimeTypes[id] = o.getString("mime")
+        }
+    }
 
     override fun serve(session: IHTTPSession): Response {
         val path = session.uri.removePrefix("/")
 
-        // Deep Link Landing Page for WhatsApp/Browser: http://<ip>:8081/join
-        if (path == "join" || path.startsWith("join/")) {
-            val hostIp = session.headers["host"]?.substringBefore(":") ?: "127.0.0.1"
-            val port = session.parameters["port"]?.firstOrNull()?.toIntOrNull() ?: 8887
-            val html = """
-                <!DOCTYPE html>
-                <html lang="de">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CSM Jam - Session beitreten</title>
-                    <style>
-                        * { box-sizing: border-box; margin: 0; padding: 0; }
-                        body {
-                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                            background: linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%);
-                            color: #FFFFFF;
-                            min-height: 100vh;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            padding: 20px;
-                        }
-                        .card {
-                            background: rgba(30, 41, 59, 0.9);
-                            backdrop-filter: blur(12px);
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            border-radius: 24px;
-                            padding: 32px 24px;
-                            max-width: 420px;
-                            width: 100%;
-                            text-align: center;
-                            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-                        }
-                        .icon { font-size: 56px; margin-bottom: 16px; display: inline-block; }
-                        h1 { font-size: 26px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.5px; }
-                        p { color: #94A3B8; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
-                        .info-pill {
-                            background: rgba(0, 230, 118, 0.1);
-                            border: 1px solid rgba(0, 230, 118, 0.3);
-                            color: #00E676;
-                            padding: 10px 16px;
-                            border-radius: 12px;
-                            font-size: 13px;
-                            font-family: monospace;
-                            display: inline-block;
-                            margin-bottom: 24px;
-                        }
-                        .btn {
-                            display: block; width: 100%; background: #00E676; color: #0F2027;
-                            font-weight: 700; font-size: 16px; padding: 16px 20px;
-                            border-radius: 30px; text-decoration: none;
-                            box-shadow: 0 8px 20px rgba(0, 230, 118, 0.4);
-                        }
-                        .footer { margin-top: 24px; font-size: 12px; color: #64748B; }
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="icon">𓆩🜲𓆪</div>
-                        <h1>CSM Jam Session</h1>
-                        <p>Du wurdest eingeladen, synchron Musik mitzuhören!</p>
-                        <div class="info-pill">Host: $hostIp:$port</div>
-                        <a class="btn" href="csmjam://join?host=$hostIp&port=$port">In CSM Jam öffnen</a>
-                        <div class="footer">
-                            Stelle sicher, dass du mit demselben WLAN oder Hotspot verbunden bist.
-                        </div>
-                    </div>
-                    <script>
-                        setTimeout(function() {
-                            window.location.href = "csmjam://join?host=$hostIp&port=$port";
-                        }, 300);
-                    </script>
-                </body>
-                </html>
-            """.trimIndent()
-            return newFixedLengthResponse(Response.Status.OK, "text/html; charset=UTF-8", html)
+        // Browser guests (iPhone & co.): the page itself checks /api/info whether this device hosts a session
+        if (path == "" || path == "index.html" || path == "join" || path.startsWith("join/")) {
+            return serveAsset("web/index.html", "text/html; charset=UTF-8")
+        }
+        if (path == "api/info") {
+            val server = MainActivity.localServer
+            val info = org.json.JSONObject().apply {
+                put("hosting", server != null && MainActivity.isHostMode && MainActivity.isSessionActive)
+                put("sessionName", server?.sessionName ?: "CSM Jam")
+                put("participants", server?.getParticipantCount() ?: 0)
+                put("track", server?.getCurrentTrackTitle() ?: org.json.JSONObject.NULL)
+                put("wsPort", 8887)
+            }
+            return jsonResponse(Response.Status.OK, info).apply { addHeader("Cache-Control", "no-store") }
+        }
+        if (path == "api/upload") {
+            return handleUpload(session)
+        }
+        if (path == "favicon.ico") {
+            return newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, "")
         }
 
         if (path.startsWith("art/")) {
             val artId = path.removePrefix("art/").substringBefore("/")
-            val artwork = activeArtworks[artId]
+            val artwork = getArtwork(artId)
                 ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Artwork not found")
             return newFixedLengthResponse(
                 Response.Status.OK, "image/jpeg",
@@ -144,7 +123,7 @@ class LocalFileServer(
 
         return try {
             val contentResolver = context.contentResolver
-            val mimeType = contentResolver.getType(contentUri) ?: "audio/mpeg"
+            val mimeType = activeMimeTypes[fileId] ?: contentResolver.getType(contentUri) ?: "audio/mpeg"
 
             // Determine file size
             var size: Long = -1L
@@ -218,6 +197,97 @@ class LocalFileServer(
             e.printStackTrace()
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Error: ${e.message}")
         }
+    }
+
+    private fun serveAsset(assetPath: String, mime: String): Response = try {
+        val bytes = context.assets.open(assetPath).use { it.readBytes() }
+        newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong()).apply {
+            addHeader("Cache-Control", "no-cache")
+        }
+    } catch (e: Exception) {
+        newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
+    }
+
+    private fun jsonResponse(status: Response.Status, body: org.json.JSONObject): Response =
+        newFixedLengthResponse(status, "application/json; charset=UTF-8", body.toString())
+
+    /**
+     * Song upload from the web player: raw file body, approved browser token in the query string.
+     * The file is copied to the cache dir, hosted like any picked file and queued on the session server.
+     */
+    private fun handleUpload(session: IHTTPSession): Response {
+        // The body may be left unread on errors – close the connection so it can't be parsed as the next request
+        fun error(status: Response.Status, msg: String) =
+            jsonResponse(status, org.json.JSONObject().put("error", msg)).apply { addHeader("Connection", "close") }
+
+        if (session.method != Method.POST) return error(Response.Status.METHOD_NOT_ALLOWED, "POST erwartet")
+        val server = MainActivity.localServer ?: return error(Response.Status.FORBIDDEN, "Keine aktive Session")
+        val token = session.parameters["token"]?.firstOrNull().orEmpty()
+        val autoplay = session.parameters["autoplay"]?.firstOrNull() == "1"
+        val fromApp = session.parameters["source"]?.firstOrNull() == "app"
+        val uploader = server.uploaderName(token, autoplay)
+            ?: return error(Response.Status.FORBIDDEN, "Keine Berechtigung zum Hinzufügen")
+
+        val length = session.headers["content-length"]?.toLongOrNull()
+            ?: return error(Response.Status.BAD_REQUEST, "Content-Length fehlt")
+        if (length <= 0L || length > MAX_UPLOAD_BYTES) return error(Response.Status.BAD_REQUEST, "Datei zu groß (max. 200 MB)")
+
+        val originalName = session.parameters["name"]?.firstOrNull()
+            ?.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")?.take(120)
+            ?.ifBlank { null } ?: "Upload.mp3"
+        val ext = originalName.substringAfterLast('.', "mp3").lowercase()
+        val mime = when (ext) {
+            "mp3" -> "audio/mpeg"
+            "m4a", "mp4", "aac" -> "audio/mp4"
+            "flac" -> "audio/flac"
+            "ogg", "oga", "opus" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            else -> return error(Response.Status.UNSUPPORTED_MEDIA_TYPE, "Nur MP3, M4A, AAC, FLAC, OGG oder WAV")
+        }
+
+        val file = java.io.File(uploadDir.apply { mkdirs() }, "${UUID.randomUUID()}.$ext")
+        try {
+            file.outputStream().use { out ->
+                val input = session.inputStream
+                val buffer = ByteArray(64 * 1024)
+                var remaining = length
+                while (remaining > 0) {
+                    val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    remaining -= read
+                }
+                if (remaining > 0) throw java.io.IOException("Upload abgebrochen")
+            }
+        } catch (e: Exception) {
+            file.delete()
+            return error(Response.Status.BAD_REQUEST, "Upload fehlgeschlagen")
+        }
+
+        val (fileId, hasArt) = hostFile(Uri.fromFile(file))
+        activeMimeTypes[fileId] = mime
+
+        val title = try {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(file.absolutePath)
+            val t = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+            val a = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+            retriever.release()
+            if (!t.isNullOrBlank()) (if (!a.isNullOrBlank()) "$t - $a" else t) else null
+        } catch (_: Exception) { null } ?: originalName.substringBeforeLast('.')
+
+        // The Host header is the address the browser used to reach us – reachable for everyone else in the LAN too
+        val hostAddr = session.headers["host"]?.substringBefore(":")?.ifBlank { null } ?: "127.0.0.1"
+        val trackUrl = "http://$hostAddr:8081/$fileId/${Uri.encode(originalName)}"
+        val artUrl = if (hasArt) "http://$hostAddr:8081/art/$fileId" else null
+        val addedBy = when {
+            autoplay -> "$uploader (Autoplay)"
+            fromApp -> uploader
+            else -> "$uploader (Web)"
+        }
+        server.addTrack(trackUrl, title, artUrl, addedBy)
+
+        return jsonResponse(Response.Status.OK, org.json.JSONObject().put("ok", true).put("title", title))
     }
 
     /** Fallback sequential skip for URIs that don't support FileDescriptor-based seeking. */

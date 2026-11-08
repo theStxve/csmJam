@@ -205,10 +205,10 @@ object SessionDiscoveryManager {
                         val senderIp = packet.address.hostAddress ?: ""
 
                         if (type == TAG_ANNOUNCE) {
-                            var hostIp = json.optString("ip")
-                            if (hostIp.isBlank() || hostIp == "127.0.0.1" || hostIp == "0.0.0.0") {
-                                hostIp = senderIp
-                            }
+                            // The address the packet really came from is reachable by definition; the IP the
+                            // host announces is only its own guess (can be a mobile-data/VPN address)
+                            val announced = json.optString("ip")
+                            val hostIp = if (senderIp.isNotBlank() && !packet.address.isLoopbackAddress) senderIp else announced
                             val session = DiscoveredSession(
                                 sessionName = json.optString("name", "CSM Jam Session"),
                                 hostIp = hostIp,
@@ -220,8 +220,7 @@ object SessionDiscoveryManager {
                             discoveredSessions[hostIp] = session
                             onSessionsUpdated(cleanAndGetSessions())
                         } else if (type == TAG_BYE) {
-                            val hostIp = json.optString("ip", senderIp)
-                            discoveredSessions.remove(hostIp)
+                            discoveredSessions.remove(senderIp)
                             onSessionsUpdated(cleanAndGetSessions())
                         }
                     }

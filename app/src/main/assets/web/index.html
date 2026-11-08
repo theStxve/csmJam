@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CSM Jam">
+<title>CSM Jam</title>
+<style>
+  :root {
+    --bg: #07090b;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-strong: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.1);
+    --text: #f5f7f8;
+    --muted: #9aa4ad;
+    --faint: #5d666e;
+    --accent: #1db954;
+    --accent-glow: rgba(29, 185, 84, 0.45);
+    --danger: #ff5a5f;
+    --warn: #ffd600;
+    --radius: 20px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:disabled { cursor: default; }
+  .hidden { display: none !important; }
+
+  /* ── Background: blurred album art ─────────────────────────────── */
+  #bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  #bgArt {
+    position: absolute; inset: -60px;
+    background: radial-gradient(circle at 30% 20%, #1d4d34 0%, transparent 55%),
+                radial-gradient(circle at 80% 70%, #14313f 0%, transparent 60%), var(--bg);
+    background-size: cover; background-position: center;
+    filter: blur(50px) saturate(1.4);
+    transform: scale(1.1);
+    transition: background-image .8s ease, opacity .8s ease;
+  }
+  #bgShade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7,9,11,.35) 0%, rgba(7,9,11,.82) 55%, var(--bg) 100%); }
+
+  #app { max-width: 480px; margin: 0 auto; min-height: 100%; padding: calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 24px); }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadeIn .35s ease; }
+  .screen.center.active { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: calc(100vh - 60px); min-height: calc(100dvh - 60px); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .logo { font-size: 44px; line-height: 1; margin-bottom: 18px; color: var(--accent); text-shadow: 0 0 28px var(--accent-glow); }
+  h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+  .muted { color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .faint { color: var(--faint); font-size: 12px; line-height: 1.5; }
+
+  .card {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  label.field { display: block; text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
+  input.text {
+    width: 100%; font: inherit; font-size: 17px; color: var(--text);
+    background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; outline: none; transition: border-color .2s;
+  }
+  input.text:focus { border-color: var(--accent); }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; min-height: 54px; border-radius: 27px; font-weight: 700; font-size: 16px;
+    text-decoration: none; transition: transform .12s ease, opacity .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--accent); color: #04140a; box-shadow: 0 10px 30px var(--accent-glow); }
+  .btn.ghost { border: 1px solid var(--border); color: var(--text); background: var(--surface); }
+  .btn.small { min-height: 44px; font-size: 14px; }
+  .btn svg { width: 20px; height: 20px; }
+  .stack > * + * { margin-top: 14px; }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .dot.off { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+
+  /* ── Waiting ───────────────────────────────────────────────────── */
+  .pulse { position: relative; width: 120px; height: 120px; margin-bottom: 28px; }
+  .pulse span { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); animation: ring 2.4s ease-out infinite; opacity: 0; }
+  .pulse span:nth-child(2) { animation-delay: .8s; }
+  .pulse span:nth-child(3) { animation-delay: 1.6s; }
+  .pulse b { position: absolute; inset: 30px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; box-shadow: 0 0 40px var(--accent-glow); }
+  .pulse b svg { width: 30px; height: 30px; color: #04140a; }
+  @keyframes ring { 0% { transform: scale(.5); opacity: .9; } 100% { transform: scale(1.25); opacity: 0; } }
+
+  /* ── Player ────────────────────────────────────────────────────── */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .topbar .title { min-width: 0; }
+  .topbar .title h2 { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .title .faint { display: flex; align-items: center; gap: 6px; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); flex-shrink: 0; }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  .art {
+    width: 100%; aspect-ratio: 1; border-radius: 24px; overflow: hidden; position: relative;
+    background: linear-gradient(135deg, #1db954 0%, #0d5a2c 100%);
+    box-shadow: 0 30px 60px rgba(0,0,0,.55); display: grid; place-items: center;
+  }
+  .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art .placeholder svg { width: 96px; height: 96px; color: rgba(255,255,255,.85); }
+  .art.paused img, .art.paused .placeholder { filter: grayscale(.4) brightness(.8); transition: filter .4s; }
+
+  .track { margin-top: 22px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .track .names { min-width: 0; }
+  .track h3 { font-size: 23px; font-weight: 800; letter-spacing: -0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track .artist { font-size: 16px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track .by { font-size: 12px; color: var(--faint); margin-top: 6px; }
+  .sync-badge { font-size: 11px; font-weight: 700; padding: 5px 9px; border-radius: 999px; background: rgba(29,185,84,.15); color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+  .sync-badge.warn { background: rgba(255,214,0,.15); color: var(--warn); }
+
+  .progress { margin-top: 18px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--text) var(--pct, 0%), rgba(255,255,255,.18) var(--pct, 0%)); }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); }
+  input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--text); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--text); margin-top: -5px; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--text); }
+  input[type=range]:disabled::-webkit-slider-thumb { background: transparent; }
+  input[type=range]:disabled::-moz-range-thumb { background: transparent; }
+  .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  .controls { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .ctl { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; color: var(--text); transition: transform .12s, opacity .2s; }
+  .ctl:active:not(:disabled) { transform: scale(.9); }
+  .ctl svg { width: 30px; height: 30px; }
+  .ctl.side svg { width: 22px; height: 22px; }
+  .ctl.on { color: var(--accent); }
+  .ctl:disabled { opacity: .3; }
+  .ctl.main { width: 76px; height: 76px; background: var(--text); color: var(--bg); box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+  .ctl.main svg { width: 34px; height: 34px; }
+  .hint { text-align: center; margin-top: 8px; }
+
+  .voice {
+    display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 12px 16px;
+    border-radius: 16px; background: rgba(229,57,53,.9); font-weight: 700; font-size: 14px; animation: fadeIn .25s;
+  }
+  .voice svg { width: 22px; height: 22px; flex-shrink: 0; }
+
+  .upload { margin-top: 18px; }
+  .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  .tabs { display: flex; gap: 6px; margin-top: 26px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
+  .tabs button { flex: 1; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .tabs button.active { background: var(--surface-strong); color: var(--text); }
+
+  .list { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 16px; }
+  .row + .row { margin-top: 4px; }
+  .row.current { background: rgba(29,185,84,.12); }
+  .row .thumb { width: 46px; height: 46px; border-radius: 10px; overflow: hidden; flex-shrink: 0; background: var(--surface-strong); display: grid; place-items: center; color: var(--muted); }
+  .row .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .row .thumb svg { width: 20px; height: 20px; }
+  .row .meta { flex: 1; min-width: 0; }
+  .row .meta .t { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.current .meta .t { color: var(--accent); }
+  .row .meta .s { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .row .act { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); flex-shrink: 0; }
+  .row .act:active { background: var(--surface-strong); }
+  .row .act svg { width: 18px; height: 18px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 16px; flex-shrink: 0; background: var(--surface-strong); }
+  .badge { font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; background: var(--surface-strong); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .badge.host { background: rgba(29,185,84,.18); color: var(--accent); }
+  .empty { text-align: center; padding: 28px 12px; color: var(--muted); font-size: 14px; }
+
+  .eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+  .eq i { width: 3px; background: var(--accent); border-radius: 1px; animation: eq 1s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: .2s; } .eq i:nth-child(3) { animation-delay: .4s; }
+  .eq.stop i { animation: none; height: 4px; }
+  @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+  /* ── Overlays ──────────────────────────────────────────────────── */
+  .overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .overlay .btn { max-width: 320px; }
+  .sheet-wrap { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet {
+    width: 100%; max-width: 480px; background: #121619; border: 1px solid var(--border); border-bottom: 0;
+    border-radius: 24px 24px 0 0; padding: 12px 20px calc(var(--safe-bottom) + 24px); animation: up .25s ease;
+  }
+  @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
+  .grip { width: 40px; height: 5px; border-radius: 3px; background: var(--faint); margin: 0 auto 18px; }
+  .sheet h4 { font-size: 18px; margin-bottom: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+  .stat { background: var(--surface); border-radius: 14px; padding: 10px; text-align: center; }
+  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .calib-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .calib-head b { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: calc(var(--safe-bottom) + 24px); transform: translate(-50%, 20px);
+    max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 14px; background: rgba(30,35,40,.96);
+    border: 1px solid var(--border); font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s; z-index: 40; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--surface-strong); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="bg"><div id="bgArt"></div><div id="bgShade"></div></div>
+
+<main id="app">
+  <section id="scr-loading" class="screen center active">
+    <div class="spinner"></div>
+  </section>
+
+  <section id="scr-nosession" class="screen center stack">
+    <div class="logo">𓆩🜲𓆪</div>
+    <h1>Keine Session</h1>
+    <p class="muted">Auf diesem Gerät läuft gerade keine CSM Jam Session.<br>Scanne den QR-Code direkt beim Host.</p>
+    <button class="btn ghost small" id="retryBtn">Erneut prüfen</button>
+  </section>
+
+  <section id="scr-join" class="screen center">
+    <div class="logo">𓆩🜲𓆪</div>
+    <h1 id="joinTitle">CSM Jam</h1>
+    <p class="muted" id="joinMeta" style="margin-top:6px">Synchron mithören – direkt im Browser</p>
+    <div class="card stack" style="margin-top:28px">
+      <div>
+        <label class="field" for="nameInput">Dein Name</label>
+        <input class="text" id="nameInput" maxlength="32" autocomplete="nickname" placeholder="z. B. Lena" enterkeyhint="go">
+      </div>
+      <button class="btn primary" id="joinBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+        Beitritt anfragen
+      </button>
+      <p class="faint">Der Host bekommt deine Anfrage und muss dich annehmen.</p>
+    </div>
+    <a class="btn ghost small hidden" id="appLink" style="margin-top:14px">Lieber in der CSM Jam App öffnen</a>
+    <p class="faint" style="margin-top:22px">Gleiches WLAN oder Hotspot wie der Host – kein Internet nötig.</p>
+  </section>
+
+  <section id="scr-wait" class="screen center">
+    <div class="pulse"><span></span><span></span><span></span>
+      <b><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></b>
+    </div>
+    <h1>Warte auf den Host …</h1>
+    <p class="muted" style="margin-top:8px">Hallo <b id="waitName"></b>! Deine Anfrage ist raus.<br>Sobald der Host dich annimmt, geht's los.</p>
+    <p class="faint" style="margin-top:16px">Lass diese Seite offen.</p>
+    <button class="btn ghost small" id="cancelBtn" style="margin-top:28px; max-width:220px">Abbrechen</button>
+  </section>
+
+  <section id="scr-msg" class="screen center stack">
+    <div class="logo" id="msgIcon">𓆩🜲𓆪</div>
+    <h1 id="msgTitle"></h1>
+    <p class="muted" id="msgText"></p>
+    <button class="btn primary small" id="msgBtn" style="max-width:260px">Erneut anfragen</button>
+  </section>
+
+  <section id="scr-player" class="screen">
+    <div class="topbar">
+      <div class="title">
+        <h2 id="sessName">CSM Jam</h2>
+        <div class="faint"><span class="dot" id="connDot"></span><span id="connText">Verbunden</span></div>
+      </div>
+      <button class="icon-btn" id="settingsBtn" aria-label="Sync-Einstellungen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+      </button>
+    </div>
+
+    <div class="art" id="art"><div class="placeholder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div></div>
+
+    <div class="track">
+      <div class="names">
+        <h3 id="tTitle">Warten auf den ersten Song</h3>
+        <div class="artist" id="tArtist">Der Host oder ein Co-DJ legt gleich los</div>
+        <div class="by" id="tBy"></div>
+      </div>
+      <span class="sync-badge hidden" id="syncBadge">Synchron</span>
+    </div>
+
+    <div class="progress">
+      <input type="range" id="seek" min="0" max="1000" value="0" step="250" disabled aria-label="Position">
+      <div class="times"><span id="tPos">0:00</span><span id="tDur">0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctl side" id="btnRepeat" aria-label="Song wiederholen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg></button>
+      <button class="ctl" id="btnPrev" aria-label="Zurück"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button class="ctl main" id="btnPlay" aria-label="Play/Pause"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="ctl" id="btnNext" aria-label="Weiter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+      <button class="ctl side" id="btnShuffle" aria-label="Mischen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+    </div>
+    <p class="faint hint" id="ctlHint">Pause gilt nur für dich – steuern kann der Host</p>
+
+    <button class="voice hidden" id="syncTestBanner" style="background:rgba(29,185,84,.18);color:var(--accent);width:100%;border:0;text-align:left;font:inherit;font-weight:700">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12h3l2-6 4 12 3-9 2 3h6"></path></svg>
+      <span>Klick-Test läuft – tippen und einstellen, bis alle Klicks gleichzeitig kommen</span>
+    </button>
+    <div class="voice hidden" id="voice">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 11v2h4v-2h-4zm-2 6.61c.96.71 2.21 1.65 3.2 2.39.4-.53.8-1.07 1.2-1.6-.99-.74-2.24-1.68-3.2-2.4-.4.54-.8 1.08-1.2 1.61zM20.4 5.6c-.4-.53-.8-1.07-1.2-1.6-.99.74-2.24 1.68-3.2 2.4.4.53.8 1.07 1.2 1.6.96-.72 2.21-1.65 3.2-2.4zM4 9c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h1v4h2v-4h1l5 3V6L8 9H4zm11.5 3c0-1.33-.58-2.53-1.5-3.35v6.69c.92-.81 1.5-2.01 1.5-3.34z"/></svg>
+      <span id="voiceText"></span>
+    </div>
+
+    <div class="upload hidden" id="uploadBox">
+      <button class="btn ghost small" id="addBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        Song vom Handy hinzufügen
+      </button>
+      <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.aac,.flac,.ogg,.opus,.wav" multiple hidden>
+      <div class="hidden" id="upProgress">
+        <div class="faint" id="upText" style="margin-top:10px"></div>
+        <div class="bar"><i id="upBar"></i></div>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="active" data-tab="queue" role="tab">Warteschlange <span id="qCount"></span></button>
+      <button data-tab="people" role="tab">Leute <span id="pCount"></span></button>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+</main>
+
+<div class="overlay hidden" id="unlock">
+  <button class="btn primary" id="unlockBtn">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+    Tippen, um den Sound zu starten
+  </button>
+</div>
+
+<div class="sheet-wrap hidden" id="sheetWrap">
+  <div class="sheet" role="dialog" aria-label="Sync-Einstellungen">
+    <div class="grip"></div>
+    <h4>Mein Sync</h4>
+    <p class="hidden" id="syncTestHint" style="margin:0 0 14px;padding:12px;border-radius:14px;background:rgba(29,185,84,.15);color:var(--accent);font-size:13px;line-height:1.4">Klick-Test läuft: stell ein, bis die Klicks aller Geräte genau gleichzeitig kommen – dann klingt es wie ein einziger Klick.</p>
+    <div style="text-align:center;margin-bottom:14px">
+      <div id="calibVal" style="font-family:ui-monospace,Menlo,monospace;font-size:38px;color:var(--accent)">0 ms</div>
+      <div class="muted" id="calibText">kein Ausgleich</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <button class="btn ghost small" id="calibEarly" style="flex-direction:column;gap:0;min-height:58px">Ich bin zu früh<span class="faint">später abspielen</span></button>
+      <button class="btn ghost small" id="calibLate" style="flex-direction:column;gap:0;min-height:58px">Ich bin zu spät<span class="faint">früher abspielen</span></button>
+    </div>
+    <input type="range" id="calib" min="-1500" max="1500" step="5" value="0" aria-label="Audio-Offset">
+    <p class="faint" style="margin:6px 0 14px">Hörst du dein Handy hinter den anderen? → „zu spät“. Davor? → „zu früh“. Gedrückt halten für große Schritte. Wirkt sofort und gilt nur für dieses Gerät.</p>
+    <div class="stats">
+      <div class="stat"><b id="stPing">–</b><span>Ping</span></div>
+      <div class="stat"><b id="stDrift">–</b><span>Abweichung</span></div>
+      <div class="stat"><b id="stCalib">0</b><span>Offset ms</span></div>
+    </div>
+    <p class="faint" id="xfInfo" style="margin:-8px 0 18px"></p>
+    <div class="stack">
+      <button class="btn ghost small" id="resyncBtn">Neu synchronisieren</button>
+      <button class="btn ghost small" id="leaveBtn" style="color:var(--danger)">Session verlassen</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<audio id="audio" preload="auto" playsinline webkit-playsinline></audio>
+<audio id="audio2" preload="auto" playsinline webkit-playsinline></audio>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  // Two alternating players: the current song in one, the next one preloads in the other
+  const els = [$('audio'), $('audio2')];
+  const cur = () => els[S.ci];
+  const alt = () => els[1 - S.ci];
+  // Monotonic clock – Date.now() can jump when the phone adjusts its time
+  const T0 = Date.now() - performance.now();
+  const clock = () => T0 + performance.now();
+
+  // localStorage can throw (private mode, blocked storage) – never let that break the player
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  const TOKEN_KEY = 'csmjam.token.' + location.host;
+
+  const S = {
+    phase: 'loading', ws: null, wsPort: 8887, final: false, reconnectTimer: null,
+    name: store.get('csmjam.name', ''), token: store.get(TOKEN_KEY, ''),
+    offset: 0, rtt: 0, samples: [], pingTimer: null,
+    calib: parseInt(store.get('csmjam.calib', '0'), 10) || 0,
+    st: { isPlaying: false, trackUrl: null, startedAtMs: 0, pauseOffsetMs: 0, isRepeatSingle: false },
+    queue: [], parts: [], titles: {}, arts: {}, addedBy: {}, sessionName: 'CSM Jam',
+    guestsCanControl: false, myCanControl: false,
+    loadedUrl: null, readySent: null, readyTimer: null, pendingSeek: null, playTimer: null,
+    lastHardSeek: 0, diffs: [], driftMs: null,
+    unlocked: false, needsUnlock: false, userPaused: false,
+    actx: null, voiceT: 0, tab: 'queue', seeking: false, uploading: false,
+    ci: 0, altUrl: null, switchTimer: null, switchFor: null,
+    // Crossfade (host setting) + volume handling
+    crossfadeMs: 0, fading: false, fadeTimer: null, lastPreload: null, duck: 1,
+    // Auto-calibration
+    calibUntil: 0, chirpTimer: null,
+    // Click test (host): same click beat on every device, tuned by ear
+    syncTest: false, clickTimer: null, clickUrl: null, jumpTimer: null
+  };
+  const canCtl = () => S.guestsCanControl || S.myCanControl;
+  const serverNow = () => clock() + S.offset;
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function show(name) {
+    S.phase = name;
+    document.querySelectorAll('.screen').forEach((e) => e.classList.toggle('active', e.id === 'scr-' + name));
+  }
+  let toastTimer = null;
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+  function fmt(ms) {
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+  function safeUrl(u) { return typeof u === 'string' && /^https?:\/\/[^\s"'()<>\\]+$/.test(u) ? u : null; }
+  function fileName(url) {
+    try { return decodeURIComponent(url.split('/').pop() || '').replace(/\.[a-z0-9]{2,4}$/i, ''); } catch (e) { return 'Unbekannter Song'; }
+  }
+  // Same convention as the app: "Title - Artist"
+  function trackInfo(url) {
+    const full = (url && (S.titles[url] || fileName(url))) || '';
+    const i = full.indexOf(' - ');
+    return i > 0 ? { title: full.slice(0, i), artist: full.slice(i + 3) } : { title: full, artist: '' };
+  }
+  function cleanName(n) { return String(n || '').replace(/^𓆩🜲𓆪\s*/, '').replace(/^[◇◎]\s*/, '').trim() || 'Gast'; }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function svg(path) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'currentColor');
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', path);
+    s.appendChild(p);
+    return s;
+  }
+  const ICON = {
+    note: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
+    close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    up: 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z',
+    play: 'M8 5v14l11-7z',
+    pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z'
+  };
+
+  // ── Audio unlock (iOS only lets an <audio> element play after a user gesture) ──
+  let silentUrl = null;
+  function silentWav() {
+    if (silentUrl) return silentUrl;
+    const sr = 8000, n = 800, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+    w(36, 'data'); v.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    silentUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+    return silentUrl;
+  }
+  function unlockAudioContext() {
+    try {
+      if (!S.actx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) S.actx = new AC();
+      }
+      if (S.actx && S.actx.state === 'suspended') S.actx.resume();
+    } catch (e) {}
+  }
+  function unlockAudio() {
+    unlockAudioContext();
+    if (S.unlocked) return;
+    S.unlocked = true; // calling play() inside the gesture is what counts, even if the promise is aborted later
+    els.forEach((el) => {
+      if (!el.src || el.src.startsWith('blob:')) {
+        el.src = silentWav();
+        const p = el.play();
+        if (p && p.then) p.then(() => { if (el !== cur() || !S.loadedUrl) el.pause(); }).catch(() => {});
+      } else {
+        const p = el.play();
+        if (el !== cur()) el.pause();
+        if (p && p.catch) p.catch(() => {});
+      }
+    });
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────
+  function send(obj) {
+    if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(obj));
+  }
+  function connect() {
+    clearTimeout(S.reconnectTimer);
+    if (S.ws) { try { S.ws.onclose = null; S.ws.close(); } catch (e) {} S.ws = null; }
+    let ws;
+    try { ws = new WebSocket('ws://' + location.hostname + ':' + S.wsPort); } catch (e) { scheduleReconnect(); return; }
+    ws.binaryType = 'arraybuffer';
+    S.ws = ws;
+    ws.onopen = () => {
+      send({ type: 'ACTION_JOIN', username: S.name, token: S.token || '' });
+      startPings();
+      setConn(true);
+    };
+    ws.onmessage = (e) => {
+      if (typeof e.data !== 'string') { playVoice(e.data); return; }
+      let m;
+      try { m = JSON.parse(e.data); } catch (_) { return; }
+      handle(m);
+    };
+    ws.onclose = (e) => {
+      if (S.ws !== ws) return;
+      S.ws = null;
+      stopPings();
+      setConn(false);
+      onClosed(e.reason || '');
+    };
+    ws.onerror = () => {};
+  }
+  function scheduleReconnect() {
+    clearTimeout(S.reconnectTimer);
+    S.reconnectTimer = setTimeout(() => {
+      if (!S.final && (S.phase === 'player' || S.phase === 'wait')) connect();
+    }, 2000);
+  }
+  function onClosed(reason) {
+    if (S.final) return;
+    if (/Session ended|Keine aktive Session/.test(reason)) return endScreen('ended');
+    if (/entfernt/.test(reason)) return endScreen('kicked');
+    if (/abgelehnt/.test(reason)) return endScreen('denied');
+    if (S.phase === 'player' || S.phase === 'wait') {
+      if (S.phase === 'player') toast('Verbindung weg – verbinde neu …');
+      scheduleReconnect();
+    }
+  }
+  function endScreen(kind) {
+    S.final = true;
+    clearTimeout(S.reconnectTimer);
+    clearTimeout(S.playTimer);
+    if (S.ws) { try { S.ws.onclose = null; S.ws.close(); } catch (e) {} S.ws = null; }
+    stopPings();
+    cur().pause();
+    hideVoice();
+    const texts = {
+      denied: ['✕', 'Abgelehnt', 'Der Host hat deine Anfrage diesmal nicht angenommen.', 'Erneut anfragen'],
+      kicked: ['✕', 'Entfernt', 'Der Host hat dich aus der Session entfernt.', 'Erneut anfragen'],
+      ended: ['𓆩🜲𓆪', 'Session beendet', 'Der Host hat die Session beendet. Danke fürs Mitfeiern!', 'Nach neuer Session suchen'],
+      left: ['𓆩🜲𓆪', 'Bis bald!', 'Du hast die Session verlassen.', 'Wieder beitreten']
+    }[kind];
+    if (kind === 'kicked' || kind === 'ended') { store.del(TOKEN_KEY); S.token = ''; }
+    $('msgIcon').textContent = texts[0];
+    $('msgTitle').textContent = texts[1];
+    $('msgText').textContent = texts[2];
+    $('msgBtn').textContent = texts[3];
+    show('msg');
+  }
+  function setConn(ok) {
+    $('connDot').classList.toggle('off', !ok);
+    $('connText').textContent = ok ? (S.rtt ? 'Verbunden · ' + Math.round(S.rtt) + ' ms' : 'Verbunden') : 'Verbinde neu …';
+  }
+
+  // ── Clock sync (NTP-lite, same 4-timestamp formula as the app) ──
+  function ping() { send({ type: 'PING_TIME', clientSendMs: Math.round(clock()) }); }
+  function startPings() {
+    stopPings();
+    S.samples = [];
+    let n = 0;
+    const burst = () => {
+      ping();
+      if (++n < 8) S.pingTimer = setTimeout(burst, 120);
+      else S.pingTimer = setInterval(ping, 5000);
+    };
+    burst();
+  }
+  function stopPings() { clearTimeout(S.pingTimer); clearInterval(S.pingTimer); S.pingTimer = null; }
+  function onPong(m) {
+    const t4 = clock(), t1 = m.clientSendMs, t2 = m.serverReceiveMs, t3 = m.serverTransmitMs;
+    if (!t1 || !t2 || !t3) return;
+    const rtt = Math.max(0, (t4 - t1) - (t3 - t2));
+    const off = ((t2 - t1) + (t3 - t4)) / 2;
+    S.samples.push({ rtt, off });
+    if (S.samples.length > 10) S.samples.shift();
+    // The sample with the smallest round trip has the least asymmetric delay → most accurate offset
+    const best = S.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+    S.offset = best.off;
+    S.rtt = best.rtt;
+    if (S.ws) setConn(true);
+    renderSyncStats();
+  }
+
+  // ── Server messages ───────────────────────────────────────────────
+  function handle(m) {
+    switch (m.type) {
+      case 'PONG_TIME': onPong(m); break;
+      case 'JOIN_PENDING': if (S.phase !== 'wait') show('wait'); break;
+      case 'JOIN_APPROVED':
+        S.token = m.token || '';
+        store.set(TOKEN_KEY, S.token);
+        if (S.phase !== 'player') {
+          show('player');
+          toast('✦ Du bist drin ✦');
+        }
+        renderAll();
+        break;
+      case 'JOIN_DENIED': endScreen('denied'); break;
+      case 'KICKED': endScreen('kicked'); break;
+      case 'PREPARE': ensureTrack(m.trackUrl); break;
+      case 'PRELOAD': S.lastPreload = m.trackUrl || null; preload(S.lastPreload); break;
+      case 'CROSSFADE_CHANGED':
+        S.crossfadeMs = m.ms || 0;
+        $('xfInfo').textContent = S.crossfadeMs ? 'Übergang zwischen Songs: ' + Math.round(S.crossfadeMs / 1000) + ' s Crossfade (vom Host)' : '';
+        break;
+      case 'CALIBRATION_START':
+        // The host is listening with its mic – music off until the measurement is over
+        S.calibUntil = m.untilMs || 0;
+        cur().pause();
+        toast('◈ Auto-Kalibrierung läuft – kurz leise');
+        break;
+      case 'CALIBRATION_CHIRP': playChirps(m.times || []); break;
+      case 'SYNC_TEST': setSyncTest(!!m.enabled); break;
+      case 'CALIBRATION_APPLY': {
+        const delta = Math.round(m.deltaMs || 0);
+        setCalib(S.calib + delta);
+        toast('◈ Auto-Kalibrierung: ' + (delta > 0 ? '+' : '') + delta + ' ms');
+        break;
+      }
+      case 'PLAY': {
+        const wait = m.startedAtMs - (serverNow() + S.calib);
+        // Crossfade: the next song starts while the current one is still playing
+        if ((m.crossfadeMs || 0) > 0 && m.pauseOffsetMs === 0 && m.fromTrackUrl && m.fromTrackUrl === S.loadedUrl &&
+            !cur().paused && !S.fading && wait > -m.crossfadeMs) {
+          Object.assign(S.st, { isPlaying: true, trackUrl: m.trackUrl, startedAtMs: m.startedAtMs, pauseOffsetMs: 0 });
+          clearTimeout(S.switchTimer);
+          S.switchFor = m.startedAtMs;
+          if (S.altUrl !== m.trackUrl) preload(m.trackUrl, true);
+          const startedAt = m.startedAtMs, xf = m.crossfadeMs, url = m.trackUrl;
+          S.switchTimer = setTimeout(() => startCrossfade(url, startedAt, xf), Math.max(0, wait));
+          renderNow();
+          break;
+        }
+        const c = cur();
+        const remaining = (c.duration - c.currentTime) * 1000;
+        const endsOnCue = !c.paused && S.loadedUrl && isFinite(remaining) && Math.abs(remaining - wait) < 1500;
+        Object.assign(S.st, { isPlaying: true, trackUrl: m.trackUrl, startedAtMs: m.startedAtMs, pauseOffsetMs: m.pauseOffsetMs });
+        clearTimeout(S.switchTimer);
+        S.switchFor = null;
+        if (m.pauseOffsetMs === 0 && wait > 0 && endsOnCue && (m.trackUrl === S.altUrl || m.trackUrl === S.loadedUrl)) {
+          // Seamless: let the current song finish and switch exactly at its end
+          S.switchFor = m.startedAtMs;
+          S.switchTimer = setTimeout(() => switchAt(m.trackUrl, m.startedAtMs), wait);
+          renderNow();
+          break;
+        }
+        ensureTrack(m.trackUrl);
+        schedule(true);
+        renderNow();
+        break;
+      }
+      case 'PAUSE':
+        S.st.isPlaying = false;
+        S.st.pauseOffsetMs = m.pauseOffsetMs;
+        clearTimeout(S.playTimer);
+        clearTimeout(S.switchTimer);
+        S.switchFor = null;
+        cur().pause();
+        seekTo(m.pauseOffsetMs);
+        renderNow();
+        break;
+      case 'STATE_UPDATE':
+        Object.assign(S.st, {
+          isPlaying: !!m.isPlaying, trackUrl: m.trackUrl || null, startedAtMs: m.startedAtMs || 0,
+          pauseOffsetMs: m.pauseOffsetMs || 0, isRepeatSingle: !!m.isRepeatSingle
+        });
+        // During a pending seamless hand-over the old song keeps playing until its end
+        if (S.st.trackUrl && S.switchFor !== S.st.startedAtMs) ensureTrack(S.st.trackUrl);
+        if (S.st.isPlaying && S.st.startedAtMs > 0) {
+          schedule(false);
+        } else if (!S.st.isPlaying) {
+          clearTimeout(S.playTimer);
+          cur().pause();
+          if (S.st.trackUrl && Math.abs(cur().currentTime * 1000 - S.st.pauseOffsetMs) > 500) seekTo(S.st.pauseOffsetMs);
+        }
+        renderNow();
+        break;
+      case 'LISTS_UPDATE':
+        S.queue = m.queue || [];
+        S.parts = (m.participants || []).map((p) => (typeof p === 'string' ? safeParse(p) : p)).filter(Boolean);
+        S.titles = m.trackTitles || {};
+        S.arts = m.trackArtworks || {};
+        S.addedBy = m.trackAddedBy || {};
+        if (m.sessionName) S.sessionName = m.sessionName;
+        renderAll();
+        break;
+      case 'GUEST_PERMISSIONS_CHANGED': S.guestsCanControl = !!m.guestsCanControl; renderControls(); renderList(); break;
+      case 'PARTICIPANT_PERMISSIONS_UPDATED': S.myCanControl = !!m.canControl; renderControls(); renderList(); break;
+      case 'VOICE_START': showVoice(m.speaker); break;
+      case 'VOICE_END': hideVoice(); break;
+    }
+  }
+  function safeParse(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+
+  // ── Playback & sync engine ────────────────────────────────────────
+  function ensureTrack(url) {
+    if (!url || S.loadedUrl === url) return;
+    S.readySent = null;
+    S.pendingSeek = null;
+    S.diffs = [];
+    if (S.altUrl === url) {
+      // Already buffering in the other player – just switch over
+      const old = cur();
+      S.ci = 1 - S.ci;
+      try { old.pause(); } catch (e) {}
+      old.playbackRate = 1;
+      S.altUrl = null;
+    } else {
+      cur().playbackRate = 1;
+      cur().src = url;
+      try { cur().load(); } catch (e) {}
+    }
+    S.loadedUrl = url;
+    clearTimeout(S.readyTimer);
+    // iOS often refuses to buffer before play() – report ready anyway so nobody has to wait for us
+    if (cur().readyState >= 3) sendReady(url);
+    else S.readyTimer = setTimeout(() => sendReady(url), 1800);
+    updateMediaSession();
+  }
+  function preload(url, force) {
+    if (S.fading && !force) return; // the other player is still fading out – preloaded once the fade is done
+    if (!url || url === S.loadedUrl) { S.altUrl = null; return; }
+    if (S.altUrl === url) return;
+    S.altUrl = url;
+    const el = alt();
+    el.preload = 'auto';
+    el.src = url;
+    try { el.load(); } catch (e) {}
+  }
+  // Real fades need element.volume – iOS ignores it, there the songs switch hard in the middle of the fade
+  const canFade = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (e) { return false; } })();
+
+  function applyVolumes(gainCur, gainAlt) {
+    try { cur().volume = Math.max(0, Math.min(1, gainCur * S.duck)); } catch (e) {}
+    try { alt().volume = Math.max(0, Math.min(1, gainAlt * S.duck)); } catch (e) {}
+  }
+
+  /** Starts the next song on the other player and blends the two (equal power, no dip in the middle). */
+  function startCrossfade(url, startedAt, xf) {
+    if (S.st.startedAtMs !== startedAt || !S.st.isPlaying) return;
+    S.switchFor = null;
+    const outgoing = cur();
+    const incoming = alt();
+    const elapsed = Math.max(0, serverNow() + S.calib - startedAt);
+    const half = xf / 2;
+    S.ci = 1 - S.ci; // incoming becomes the timeline player
+    S.loadedUrl = url;
+    S.altUrl = null;
+    S.readySent = null;
+    S.diffs = [];
+    S.fading = true;
+    const finish = () => {
+      clearInterval(S.fadeTimer);
+      S.fading = false;
+      try { outgoing.pause(); } catch (e) {}
+      applyVolumes(1, 1);
+      preload(S.lastPreload);
+      sendReady(url);
+    };
+    if (!canFade) {
+      // iOS: start the new song at the fade's midpoint and stop the old one there
+      setTimeout(() => {
+        try { outgoing.pause(); } catch (e) {}
+        seekTo(Math.max(elapsed, half));
+        safePlay();
+        finish();
+      }, Math.max(0, half - elapsed));
+      updateMediaSession();
+      return;
+    }
+    applyVolumes(0, 1);
+    seekTo(elapsed);
+    safePlay();
+    const total = Math.max(40, xf - elapsed);
+    const t0 = clock();
+    S.fadeTimer = setInterval(() => {
+      const t = Math.min(1, (clock() - t0) / total);
+      applyVolumes(Math.sin(t * Math.PI / 2), Math.cos(t * Math.PI / 2));
+      if (t >= 1) finish();
+    }, 40);
+    updateMediaSession();
+  }
+
+  // ── Auto-calibration: our chirps, exactly on cue, through the same player path as the music ──
+  function chirpWavUrl(offsetsMs, totalMs) {
+    const sr = 48000, n = Math.round(sr * totalMs / 1000);
+    const pcm = new Int16Array(n);
+    const len = Math.round(sr * 0.04), f0 = 2000, f1 = 8000, dur = len / sr;
+    offsetsMs.forEach((off) => {
+      const start = Math.round(sr * off / 1000);
+      for (let i = 0; i < len && start + i < n; i++) {
+        const t = i / sr;
+        const phase = 2 * Math.PI * (f0 * t + (f1 - f0) * t * t / (2 * dur));
+        const w = 0.5 * (1 - Math.cos(2 * Math.PI * i / (len - 1)));
+        pcm[start + i] = Math.round(Math.sin(phase) * w * 0.9 * 32767);
+      }
+    });
+    const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, pcm[i], true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  function playChirps(times) {
+    if (!times.length || S.fading) return;
+    const lead = 1500, first = Math.min(...times), last = Math.max(...times);
+    const startAt = first - lead;
+    const el = alt(); // already unlocked by the join tap (iOS)
+    const url = chirpWavUrl(times.map((t) => t - first + lead), last - first + lead + 600);
+    S.altUrl = null;
+    el.src = url;
+    try { el.load(); } catch (e) {}
+    el.volume = 1;
+    clearInterval(S.chirpTimer);
+    let started = false, lastSeek = 0;
+    // Start on cue, then align during the silent lead-in: seek big errors, trim the rest with the rate
+    S.chirpTimer = setInterval(() => {
+      const expected = serverNow() + S.calib - startAt;
+      if (expected < 0) return;
+      if (!started) {
+        started = true;
+        try { el.currentTime = expected / 1000; } catch (e) {}
+        const pr = el.play();
+        if (pr && pr.catch) pr.catch(() => {});
+        return;
+      }
+      if (expected > lead - 250) {
+        el.playbackRate = 1;
+        if (expected > last - startAt + 900) {
+          clearInterval(S.chirpTimer);
+          el.pause();
+          URL.revokeObjectURL(url);
+          preload(S.lastPreload);
+        }
+        return;
+      }
+      if (el.paused || el.readyState < 3 || clock() - lastSeek < 250) return;
+      const diff = el.currentTime * 1000 - expected;
+      if (Math.abs(diff) > 40) {
+        el.playbackRate = 1;
+        try { el.currentTime = expected / 1000; } catch (e) {}
+        lastSeek = clock();
+      } else {
+        el.playbackRate = Math.max(0.85, Math.min(1.15, 1 - diff / 250));
+      }
+    }, 40);
+  }
+
+  function describeCalib(v) {
+    return v > 0 ? 'spielt ' + v + ' ms früher als normal' : v < 0 ? 'spielt ' + (-v) + ' ms später als normal' : 'kein Ausgleich';
+  }
+
+  /** Changes this device's offset; takes effect right away (short debounce while dragging/holding). */
+  function setCalib(ms) {
+    S.calib = Math.max(-1500, Math.min(1500, Math.round(ms)));
+    store.set('csmjam.calib', String(S.calib));
+    $('calib').value = String(S.calib);
+    $('calibVal').textContent = S.calib === 0 ? '0 ms' : (S.calib > 0 ? '+' : '−') + Math.abs(S.calib) + ' ms';
+    $('calibText').textContent = describeCalib(S.calib);
+    S.diffs = [];
+    renderSyncStats();
+    clearTimeout(S.jumpTimer);
+    S.jumpTimer = setTimeout(() => {
+      if (S.syncTest) alignClicks(true);
+      else schedule(true); // jump to the new position instead of gliding there slowly
+    }, 250);
+  }
+
+  // ── Click test ──
+  function clickWavUrl() {
+    const sr = 48000, loopMs = 4000, n = sr * loopMs / 1000, len = Math.round(sr * 0.012);
+    const pcm = new Int16Array(n);
+    for (let t = 0; t < loopMs; t += 500) {
+      const accent = t % 1000 === 0, f = accent ? 2000 : 1200, start = Math.round(sr * t / 1000);
+      for (let i = 0; i < len; i++) {
+        const env = Math.exp(-i / (len / 5));
+        pcm[start + i] = Math.round(Math.sin(2 * Math.PI * f * i / sr) * env * (accent ? 0.95 : 0.7) * 32767);
+      }
+    }
+    const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, pcm[i], true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  /** Loop position must equal (session time mod 4 s) – with this device's offset, like the music. */
+  function alignClicks(force) {
+    const el = alt();
+    if (!S.syncTest || el.paused || el.readyState < 3) return;
+    const expected = ((serverNow() + S.calib) % 4000 + 4000) % 4000;
+    let diff = el.currentTime * 1000 - expected;
+    if (diff > 2000) diff -= 4000;
+    if (diff < -2000) diff += 4000;
+    if (force || Math.abs(diff) > 20) {
+      el.playbackRate = 1;
+      try { el.currentTime = expected / 1000; } catch (e) {}
+    } else {
+      el.playbackRate = Math.abs(diff) <= 2 ? 1 : Math.max(0.95, Math.min(1.05, 1 - diff / 400));
+    }
+  }
+
+  function setSyncTest(on) {
+    if (on === S.syncTest) return;
+    S.syncTest = on;
+    $('syncTestBanner').classList.toggle('hidden', !on);
+    $('syncTestHint').classList.toggle('hidden', !on);
+    const el = alt();
+    clearInterval(S.clickTimer);
+    if (on) {
+      cur().pause();
+      if (!S.clickUrl) S.clickUrl = clickWavUrl();
+      S.altUrl = null;
+      el.src = S.clickUrl;
+      el.loop = true;
+      el.volume = 1;
+      try { el.load(); } catch (e) {}
+      const pr = el.play();
+      if (pr && pr.catch) pr.catch(() => {});
+      let last = 0;
+      S.clickTimer = setInterval(() => {
+        if (clock() - last < 400) { alignClicks(false); return; }
+        last = clock();
+        alignClicks(false);
+      }, 50);
+      toast('◈ Klick-Test: stell dein Gerät nach Gehör ein');
+    } else {
+      el.pause();
+      el.loop = false;
+      el.playbackRate = 1;
+      preload(S.lastPreload);
+      S.diffs = [];
+      schedule(true);
+    }
+  }
+
+  /** Seamless hand-over at the exact end of the current song (announced ahead by the server). */
+  function switchAt(url, startedAt) {
+    if (S.st.startedAtMs !== startedAt || !S.st.isPlaying) return;
+    S.switchFor = null;
+    if (S.loadedUrl !== url) ensureTrack(url);
+    else seekTo(0); // repeat-one
+    S.diffs = [];
+    const elapsed = serverNow() + S.calib - startedAt;
+    if (elapsed > 40) seekTo(elapsed);
+    safePlay();
+  }
+  function sendReady(url) {
+    if (!url || S.loadedUrl !== url || S.readySent === url) return;
+    S.readySent = url;
+    const d = cur().duration;
+    send({ type: 'ACTION_TRACK_READY', trackUrl: url, durationMs: isFinite(d) && d > 0 ? Math.round(d * 1000) : 0 });
+  }
+  function seekTo(ms) {
+    const sec = Math.max(0, ms) / 1000;
+    if (cur().readyState >= 1) {
+      try { cur().currentTime = sec; return; } catch (e) {}
+    }
+    S.pendingSeek = sec;
+  }
+  function safePlay() {
+    if (S.userPaused || S.needsUnlock) return;
+    const p = cur().play();
+    if (p && p.catch) {
+      p.catch((err) => {
+        if (err && err.name === 'NotAllowedError') {
+          S.needsUnlock = true;
+          $('unlock').classList.remove('hidden');
+        }
+      });
+    }
+  }
+  /** Aligns the local player with the server timeline (startedAtMs is on the server clock). */
+  function schedule(force) {
+    const st = S.st;
+    if (S.switchFor === st.startedAtMs) return; // seamless switch already planned
+    clearTimeout(S.playTimer);
+    if (!st.isPlaying || !st.trackUrl || S.loadedUrl !== st.trackUrl) return;
+    const elapsed = serverNow() + S.calib - st.startedAtMs;
+    if (elapsed < 0) {
+      // Start lies in the future: pre-seek now, flip to play exactly at the start moment
+      const startedAt = st.startedAtMs;
+      seekTo(st.pauseOffsetMs);
+      cur().pause();
+      S.playTimer = setTimeout(() => {
+        if (S.st.isPlaying && S.st.startedAtMs === startedAt) safePlay();
+      }, -elapsed);
+      return;
+    }
+    const expected = st.pauseOffsetMs + elapsed;
+    // Already playing close enough – leave fine-tuning to the drift loop instead of an audible jump
+    if (!force && !cur().paused && cur().readyState >= 2 && Math.abs(cur().currentTime * 1000 - expected) < 300) return;
+    seekTo(expected);
+    safePlay();
+  }
+  function setRate(r) {
+    if (Math.abs(cur().playbackRate - r) > 0.001) {
+      try { cur().playbackRate = r; } catch (e) {}
+    }
+  }
+  function driftLoop() {
+    const st = S.st;
+    if (serverNow() < S.calibUntil || S.syncTest) return; // calibration / click test: music stays off
+    if (!st.isPlaying || !st.trackUrl || S.loadedUrl !== st.trackUrl || S.needsUnlock || S.userPaused) {
+      setRate(1);
+      S.driftMs = null;
+      return;
+    }
+    const a = cur();
+    const elapsed = serverNow() + S.calib - st.startedAtMs;
+    if (elapsed < 0) return;
+    const expected = st.pauseOffsetMs + elapsed;
+    if (isFinite(a.duration) && a.duration > 0 && expected / 1000 > a.duration) return;
+    if (a.paused) {
+      if (!a.ended) { seekTo(expected); safePlay(); }
+      return;
+    }
+    if (a.readyState < 3 || a.seeking || clock() - S.lastHardSeek < 800) return;
+    S.diffs.push(a.currentTime * 1000 - expected);
+    if (S.diffs.length > 5) S.diffs.shift();
+    // Median ignores single outliers from the coarse currentTime reporting
+    const d = S.diffs.slice().sort((x, y) => x - y)[Math.floor(S.diffs.length / 2)];
+    S.driftMs = Math.round(d);
+    if (Math.abs(d) > 300 && S.diffs.length >= 2) {
+      if (clock() - S.lastHardSeek > 2500) {
+        S.lastHardSeek = clock();
+        S.diffs = [];
+        setRate(1);
+        seekTo(expected);
+      }
+    } else if (Math.abs(d) <= 10) {
+      setRate(1);
+    } else {
+      // Proportional: 25 ms off → 1 % speed change, capped at ±4 %, in 0.5 % steps
+      const corr = Math.max(-0.04, Math.min(0.04, d / 2500));
+      setRate(Math.round((1 - corr) / 0.005) * 0.005);
+    }
+    renderSyncStats();
+  }
+
+  els.forEach((el) => {
+    el.addEventListener('loadedmetadata', () => {
+      if (el !== cur()) return;
+      if (S.pendingSeek != null) {
+        try { el.currentTime = S.pendingSeek; } catch (e) {}
+        S.pendingSeek = null;
+      }
+      renderProgress();
+    });
+    el.addEventListener('canplay', () => { if (el === cur()) sendReady(S.loadedUrl); });
+    el.addEventListener('ended', () => {
+      if (el === cur() && S.loadedUrl) send({ type: 'ACTION_TRACK_FINISHED', trackUrl: S.loadedUrl });
+    });
+    el.addEventListener('error', () => {
+      if (el !== cur() || !el.src || el.src.startsWith('blob:')) return;
+      if (S.loadedUrl && S.phase === 'player') toast('Song konnte nicht geladen werden');
+      sendReady(S.loadedUrl);
+    });
+  });
+
+  // ── Megaphone: 16 kHz mono PCM16 chunks from the app ──────────────
+  function showVoice(speaker) {
+    $('voiceText').textContent = cleanName(speaker) + ' macht eine Durchsage …';
+    $('voice').classList.remove('hidden');
+    S.duck = 0.2; // ignored on iOS (volume is hardware-only there)
+    if (!S.fading) applyVolumes(1, 1);
+    S.voiceT = 0;
+    S.lastVoiceAt = Date.now();
+    // iOS suspends the AudioContext after backgrounding – try to wake it up
+    if (S.actx && S.actx.state === 'suspended') { try { S.actx.resume(); } catch (e) {} }
+  }
+  function hideVoice() {
+    $('voice').classList.add('hidden');
+    S.duck = 1;
+    if (!S.fading) applyVolumes(1, 1);
+  }
+  function playVoice(buf) {
+    S.lastVoiceAt = Date.now();
+    const ctx = S.actx;
+    if (!ctx || ctx.state !== 'running') return;
+    const pcm = new Int16Array(buf, 0, Math.floor(buf.byteLength / 2));
+    if (!pcm.length) return;
+    let ab;
+    try {
+      ab = ctx.createBuffer(1, pcm.length, 16000);
+      const ch = ab.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+    } catch (e) {
+      // Older Safari only accepts ≥ 22.05 kHz buffers: upsample ×3 to 48 kHz
+      ab = ctx.createBuffer(1, pcm.length * 3, 48000);
+      const ch = ab.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) {
+        const a = pcm[i] / 32768, b = (i + 1 < pcm.length ? pcm[i + 1] : pcm[i]) / 32768;
+        ch[i * 3] = a; ch[i * 3 + 1] = a + (b - a) / 3; ch[i * 3 + 2] = a + 2 * (b - a) / 3;
+      }
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = ab;
+    src.connect(ctx.destination);
+    const t = Math.max(ctx.currentTime + 0.06, S.voiceT);
+    src.start(t);
+    S.voiceT = t + ab.duration;
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────
+  function renderAll() {
+    $('sessName').textContent = S.sessionName;
+    document.title = S.sessionName + ' · CSM Jam';
+    renderNow();
+    renderControls();
+    renderList();
+  }
+  function renderNow() {
+    const url = S.st.trackUrl || S.loadedUrl;
+    const art = $('art');
+    art.textContent = '';
+    const artUrl = url ? safeUrl(S.arts[url]) : null;
+    if (artUrl) {
+      const img = el('img');
+      img.alt = '';
+      img.src = artUrl;
+      img.onerror = () => { art.textContent = ''; art.appendChild(placeholder()); };
+      art.appendChild(img);
+      $('bgArt').style.backgroundImage = 'url("' + artUrl + '")';
+    } else {
+      art.appendChild(placeholder());
+      $('bgArt').style.backgroundImage = '';
+    }
+    art.classList.toggle('paused', !S.st.isPlaying);
+    if (url) {
+      const info = trackInfo(url);
+      $('tTitle').textContent = info.title || 'Unbekannter Song';
+      $('tArtist').textContent = info.artist || S.sessionName;
+      const by = S.addedBy[url];
+      $('tBy').textContent = by ? 'Hinzugefügt von ' + by : '';
+    } else {
+      $('tTitle').textContent = 'Warten auf den ersten Song';
+      $('tArtist').textContent = 'Der Host oder ein Co-DJ legt gleich los';
+      $('tBy').textContent = '';
+    }
+    const playing = S.st.isPlaying && (canCtl() || !S.userPaused);
+    const icon = $('playIcon');
+    icon.textContent = '';
+    icon.appendChild(svg(playing ? ICON.pause : ICON.play).firstChild);
+    $('btnRepeat').classList.toggle('on', S.st.isRepeatSingle);
+    updateMediaSession();
+    renderList();
+  }
+  function placeholder() {
+    const d = el('div', 'placeholder');
+    d.appendChild(svg(ICON.note));
+    return d;
+  }
+  function renderControls() {
+    const c = canCtl();
+    ['btnPrev', 'btnNext', 'btnShuffle', 'btnRepeat'].forEach((id) => { $(id).disabled = !c; });
+    $('seek').disabled = !c;
+    $('ctlHint').textContent = c ? '◈ Du darfst mitsteuern' : 'Pause gilt nur für dich – steuern kann der Host';
+    $('uploadBox').classList.toggle('hidden', !c);
+  }
+  function renderProgress() {
+    if (S.seeking) return;
+    const st = S.st;
+    let pos = st.pauseOffsetMs;
+    if (st.isPlaying && st.startedAtMs > 0) pos = st.pauseOffsetMs + Math.max(0, serverNow() + S.calib - st.startedAtMs);
+    const dur = isFinite(cur().duration) && cur().duration > 0 ? cur().duration * 1000 : 0;
+    if (dur) pos = Math.min(pos, dur);
+    if (!st.trackUrl) pos = 0;
+    const seek = $('seek');
+    seek.max = String(Math.max(1000, Math.round(dur)));
+    seek.value = String(Math.round(pos));
+    seek.style.setProperty('--pct', (dur ? (pos / dur) * 100 : 0) + '%');
+    $('tPos').textContent = fmt(pos);
+    $('tDur').textContent = dur ? fmt(dur) : '0:00';
+  }
+  function renderSyncStats() {
+    const badge = $('syncBadge');
+    if (S.st.isPlaying && S.driftMs != null && !S.userPaused) {
+      const a = Math.abs(S.driftMs);
+      badge.classList.remove('hidden');
+      badge.classList.toggle('warn', a > 60);
+      badge.textContent = a <= 30 ? 'Synchron' : (S.driftMs > 0 ? '+' : '') + S.driftMs + ' ms';
+    } else {
+      badge.classList.add('hidden');
+    }
+    $('stPing').textContent = S.rtt ? Math.round(S.rtt) + ' ms' : '–';
+    $('stDrift').textContent = S.driftMs != null ? S.driftMs + ' ms' : '–';
+    $('stCalib').textContent = String(S.calib);
+  }
+  function renderList() {
+    const list = $('list');
+    if (!list) return;
+    $('qCount').textContent = S.queue.length ? '· ' + S.queue.length : '';
+    $('pCount').textContent = S.parts.length ? '· ' + S.parts.length : '';
+    list.textContent = '';
+    if (S.tab === 'queue') {
+      if (!S.queue.length) {
+        list.appendChild(el('div', 'empty', canCtl() ? 'Noch nichts in der Warteschlange – füg was hinzu!' : 'Noch nichts in der Warteschlange.'));
+        return;
+      }
+      const curIdx = S.queue.indexOf(S.st.trackUrl);
+      S.queue.forEach((url, i) => {
+        const row = el('div', 'row' + (url === S.st.trackUrl ? ' current' : ''));
+        const thumb = el('div', 'thumb');
+        const artUrl = safeUrl(S.arts[url]);
+        if (artUrl) {
+          const img = el('img');
+          img.alt = '';
+          img.loading = 'lazy';
+          img.src = artUrl;
+          thumb.appendChild(img);
+        } else thumb.appendChild(svg(ICON.note));
+        row.appendChild(thumb);
+        const meta = el('div', 'meta');
+        const info = trackInfo(url);
+        const t = el('div', 't', info.title);
+        if (url === S.st.trackUrl) {
+          const eq = el('span', 'eq' + (S.st.isPlaying ? '' : ' stop'));
+          eq.style.marginRight = '8px';
+          eq.append(el('i'), el('i'), el('i'));
+          t.prepend(eq);
+        }
+        meta.appendChild(t);
+        const sub = [info.artist, S.addedBy[url] ? 'von ' + S.addedBy[url] : ''].filter(Boolean).join(' · ');
+        meta.appendChild(el('div', 's', sub || ' '));
+        row.appendChild(meta);
+        if (canCtl() && url !== S.st.trackUrl) {
+          const target = curIdx >= 0 ? curIdx + 1 : 0;
+          if (i !== target) {
+            const upBtn = el('button', 'act');
+            upBtn.setAttribute('aria-label', 'Als Nächstes spielen');
+            upBtn.appendChild(svg(ICON.up));
+            upBtn.onclick = () => { send({ type: 'ACTION_QUEUE_REORDER', fromIndex: i, toIndex: target }); toast('Kommt als Nächstes'); };
+            row.appendChild(upBtn);
+          }
+          const rm = el('button', 'act');
+          rm.setAttribute('aria-label', 'Entfernen');
+          rm.appendChild(svg(ICON.close));
+          rm.onclick = () => send({ type: 'ACTION_QUEUE_REMOVE', trackUrl: url });
+          row.appendChild(rm);
+        }
+        list.appendChild(row);
+      });
+    } else {
+      const sorted = S.parts.slice().sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
+      sorted.forEach((p) => {
+        const row = el('div', 'row');
+        const name = cleanName(p.name);
+        const av = el('div', 'avatar', name.charAt(0).toUpperCase());
+        if (p.isHost) { av.style.background = 'var(--accent)'; av.style.color = '#04140a'; }
+        row.appendChild(av);
+        const meta = el('div', 'meta');
+        const t = el('div', 't', name);
+        if (p.isHost) t.appendChild(el('span', 'badge host', 'HOST'));
+        if (p.isWeb) t.appendChild(el('span', 'badge', 'WEB'));
+        if (p.canControl && !p.isHost) t.appendChild(el('span', 'badge', 'CO-DJ'));
+        if (name === S.name && p.isWeb) t.appendChild(el('span', 'badge', 'DU'));
+        meta.appendChild(t);
+        row.appendChild(meta);
+        list.appendChild(row);
+      });
+    }
+  }
+
+  // ── Lock screen / control center ──────────────────────────────────
+  function updateMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    const url = S.st.trackUrl || S.loadedUrl;
+    if (!url) return;
+    const info = trackInfo(url);
+    const artUrl = safeUrl(S.arts[url]);
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: info.title, artist: info.artist || S.sessionName, album: 'CSM Jam',
+        artwork: artUrl ? [{ src: artUrl, sizes: '512x512', type: 'image/jpeg' }] : []
+      });
+    } catch (e) {}
+  }
+  if ('mediaSession' in navigator) {
+    const h = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
+    h('play', () => togglePlay(true));
+    h('pause', () => togglePlay(false));
+    h('nexttrack', () => { if (canCtl()) send({ type: 'ACTION_SKIP_NEXT' }); });
+    h('previoustrack', () => { if (canCtl()) send({ type: 'ACTION_SKIP_PREV' }); });
+  }
+
+  // ── User actions ──────────────────────────────────────────────────
+  function togglePlay(wantPlay) {
+    unlockAudioContext();
+    if (canCtl()) {
+      const play = wantPlay != null ? wantPlay : !S.st.isPlaying;
+      S.userPaused = false;
+      if (play) {
+        // Bless the element inside this gesture so the scheduled start isn't blocked
+        if (S.loadedUrl) { const p = cur().play(); if (p && p.catch) p.catch(() => {}); }
+        send({ type: 'ACTION_PLAY' });
+      } else {
+        send({ type: 'ACTION_PAUSE' });
+      }
+      return;
+    }
+    // Listener without control rights: pause/resume only for themselves
+    S.userPaused = wantPlay != null ? !wantPlay : !S.userPaused;
+    if (S.userPaused) {
+      cur().pause();
+      toast('Für dich pausiert');
+    } else {
+      S.diffs = [];
+      schedule(true);
+    }
+    renderNow();
+  }
+
+  $('joinBtn').onclick = () => {
+    const input = $('nameInput');
+    const name = input.value.trim().slice(0, 32);
+    if (!name) {
+      input.classList.remove('shake');
+      void input.offsetWidth;
+      input.classList.add('shake');
+      input.focus();
+      return;
+    }
+    S.name = name;
+    store.set('csmjam.name', name);
+    unlockAudio();
+    S.final = false;
+    $('waitName').textContent = name;
+    show('wait');
+    connect();
+  };
+  $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
+  $('cancelBtn').onclick = () => endScreen('left');
+  $('msgBtn').onclick = () => { S.final = false; loadInfo(); };
+  $('retryBtn').onclick = () => loadInfo();
+  $('unlockBtn').onclick = () => {
+    S.needsUnlock = false;
+    $('unlock').classList.add('hidden');
+    unlockAudioContext();
+    const p = cur().play();
+    if (p && p.catch) p.catch(() => {});
+    S.diffs = [];
+    schedule(true);
+  };
+
+  $('btnPlay').onclick = () => togglePlay();
+  $('btnNext').onclick = () => send({ type: 'ACTION_SKIP_NEXT' });
+  $('btnPrev').onclick = () => send({ type: 'ACTION_SKIP_PREV' });
+  $('btnShuffle').onclick = () => { send({ type: 'ACTION_SHUFFLE' }); toast('◈ Warteschlange gemischt'); };
+  $('btnRepeat').onclick = () => {
+    send({ type: 'ACTION_SET_REPEAT_SINGLE', repeat: !S.st.isRepeatSingle });
+    toast(S.st.isRepeatSingle ? 'Wiederholen aus' : 'Song wird wiederholt');
+  };
+  const seek = $('seek');
+  seek.addEventListener('input', () => {
+    S.seeking = true;
+    $('tPos').textContent = fmt(+seek.value);
+    seek.style.setProperty('--pct', (+seek.value / +seek.max) * 100 + '%');
+  });
+  seek.addEventListener('change', () => {
+    send({ type: 'ACTION_SEEK', seekToMs: Math.round(+seek.value) });
+    setTimeout(() => { S.seeking = false; }, 800);
+  });
+
+  document.querySelectorAll('.tabs button').forEach((b) => {
+    b.onclick = () => {
+      S.tab = b.dataset.tab;
+      document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      renderList();
+    };
+  });
+
+  // Sync sheet
+  const calib = $('calib');
+  calib.value = String(S.calib);
+  $('calibVal').textContent = S.calib === 0 ? '0 ms' : (S.calib > 0 ? '+' : '−') + Math.abs(S.calib) + ' ms';
+  $('calibText').textContent = describeCalib(S.calib);
+  calib.addEventListener('input', () => setCalib(parseInt(calib.value, 10) || 0));
+  function holdRepeat(btn, step) {
+    let timer = null;
+    const stop = () => { clearTimeout(timer); timer = null; };
+    const tick = (delay) => { setCalib(S.calib + step); timer = setTimeout(() => tick(80), delay); };
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); stop(); tick(400); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => btn.addEventListener(ev, stop));
+  }
+  holdRepeat($('calibEarly'), -5);
+  holdRepeat($('calibLate'), 5);
+  $('syncTestBanner').onclick = () => { renderSyncStats(); $('sheetWrap').classList.remove('hidden'); };
+
+  $('settingsBtn').onclick = () => { renderSyncStats(); $('sheetWrap').classList.remove('hidden'); };
+  $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap')) $('sheetWrap').classList.add('hidden'); });
+  $('resyncBtn').onclick = () => {
+    startPings();
+    S.diffs = [];
+    setTimeout(() => schedule(true), 1200);
+    toast('Synchronisiere neu …');
+    $('sheetWrap').classList.add('hidden');
+  };
+  $('leaveBtn').onclick = () => {
+    $('sheetWrap').classList.add('hidden');
+    store.del(TOKEN_KEY);
+    S.token = '';
+    endScreen('left');
+  };
+
+  // Song upload (raw body, token proves the host approved us)
+  $('addBtn').onclick = () => $('fileInput').click();
+  $('fileInput').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length || S.uploading) return;
+    S.uploading = true;
+    $('upProgress').classList.remove('hidden');
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      $('upText').textContent = (files.length > 1 ? (i + 1) + '/' + files.length + ' · ' : '') + f.name;
+      try {
+        await upload(f, (pct) => { $('upBar').style.width = pct + '%'; });
+        ok++;
+      } catch (err) {
+        toast(err.message || 'Upload fehlgeschlagen');
+      }
+    }
+    S.uploading = false;
+    $('upProgress').classList.add('hidden');
+    $('upBar').style.width = '0';
+    if (ok) toast(ok === 1 ? '✦ Song hinzugefügt' : '✦ ' + ok + ' Songs hinzugefügt');
+  });
+  function upload(file, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const q = '?token=' + encodeURIComponent(S.token) + '&name=' + encodeURIComponent(file.name);
+      xhr.open('POST', '/api/upload' + q);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) onProgress(Math.round((ev.loaded / ev.total) * 100)); };
+      xhr.onload = () => {
+        let body = {};
+        try { body = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status === 200) resolve(body);
+        else reject(new Error(body.error || 'Upload fehlgeschlagen'));
+      };
+      xhr.onerror = () => reject(new Error('Upload fehlgeschlagen – Verbindung?'));
+      xhr.send(file);
+    });
+  }
+
+  // Coming back from the lock screen / another app: reconnect + re-align
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (S.phase === 'player' || S.phase === 'wait') {
+      if (!S.ws || S.ws.readyState > 1) connect();
+      else { startPings(); S.diffs = []; schedule(false); }
+    }
+  });
+
+  // ── Start ─────────────────────────────────────────────────────────
+  async function loadInfo() {
+    show('loading');
+    try {
+      const r = await fetch('/api/info', { cache: 'no-store' });
+      const info = await r.json();
+      S.wsPort = info.wsPort || 8887;
+      if (!info.hosting) { show('nosession'); return; }
+      S.sessionName = info.sessionName || 'CSM Jam';
+      $('joinTitle').textContent = S.sessionName;
+      const bits = [];
+      if (info.participants) bits.push(info.participants + (info.participants === 1 ? ' Person' : ' Leute') + ' dabei');
+      if (info.track) bits.push('◈ ' + info.track);
+      $('joinMeta').textContent = bits.length ? bits.join(' · ') : 'Synchron mithören – direkt im Browser';
+      $('nameInput').value = S.name;
+      if (/android/i.test(navigator.userAgent)) {
+        const link = $('appLink');
+        link.href = 'csmjam://join?host=' + encodeURIComponent(location.hostname) + '&port=' + S.wsPort;
+        link.classList.remove('hidden');
+      }
+      show('join');
+    } catch (e) {
+      show('nosession');
+    }
+  }
+
+  setInterval(driftLoop, 500);
+  // Safety net: the end of an announcement got lost (speaker's wifi died) → hide after 4 s of silence
+  setInterval(() => {
+    if (!$('voice').classList.contains('hidden') && Date.now() - (S.lastVoiceAt || 0) > 4000) hideVoice();
+  }, 1000);
+  setInterval(() => { if (S.phase === 'player') renderProgress(); }, 250);
+  loadInfo();
+})();
+</script>
+</body>
+</html>

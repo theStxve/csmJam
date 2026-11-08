@@ -151,11 +151,10 @@ class JamSessionService : Service() {
             addAction(ACTION_SKIP_NEXT)
             addAction(ACTION_SKIP_PREV)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(mediaControlReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(mediaControlReceiver, filter)
-        }
+        // Only our own notification sends these – never let other apps trigger them
+        androidx.core.content.ContextCompat.registerReceiver(
+            this, mediaControlReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -219,6 +218,7 @@ class JamSessionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildNotification(): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -249,7 +249,7 @@ class JamSessionService : Service() {
             .addAction(android.R.drawable.ic_media_next, "Weiter", pendingBroadcast(ACTION_SKIP_NEXT))
 
         // Attach Media3 MediaStyle
-        val session = MainActivity.activeMediaSession
+        val session = PlaybackEngine.peek()?.mediaSession
         if (session != null) {
             builder.setStyle(
                 MediaStyleNotificationHelper.MediaStyle(session)

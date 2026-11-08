@@ -11,12 +11,12 @@ class MusicSyncClient(
     val username: String,
     var onStateUpdated: (isPlaying: Boolean, trackUrl: String?, startedAtMs: Long, pauseOffsetMs: Long, isRepeatSingle: Boolean) -> Unit,
     var onListsUpdated: (queue: List<String>, participants: List<String>, trackTitles: Map<String, String>, trackArtworks: Map<String, String>) -> Unit,
-    var onPlayReceived: (trackUrl: String, startedAtMs: Long, pauseOffsetMs: Long) -> Unit,
+    var onPlayReceived: (trackUrl: String, startedAtMs: Long, pauseOffsetMs: Long, crossfadeMs: Int, fromTrackUrl: String?) -> Unit,
     var onPauseReceived: (pauseOffsetMs: Long) -> Unit,
     var onPrepareReceived: (trackUrl: String) -> Unit,
     var onTimeOffsetCalculated: (Long) -> Unit,
     var onGuestPermissionsChanged: (Boolean) -> Unit = {}
-) : WebSocketClient(serverUri, Draft_6455(), emptyMap(), 60_000) {
+) : WebSocketClient(serverUri, Draft_6455(), emptyMap(), 6_000) {
 
     private var pingStartTimeNano: Long = 0L
     private var serverTimeOffset: Long = 0L
@@ -34,6 +34,74 @@ class MusicSyncClient(
     var onMyPermissionsChanged: ((canMegaphone: Boolean, canControl: Boolean) -> Unit)? = null
     var onSessionStatsUpdated: ((startTimeMs: Long, totalPlayed: Int, trackAddedBy: Map<String, String>) -> Unit)? = null
     var onFallbackRequested: (() -> Unit)? = null
+    var onJoinRequests: ((List<JoinRequest>) -> Unit)? = null
+    var onVoiceBusy: ((speaker: String) -> Unit)? = null
+    var onPreloadReceived: ((trackUrl: String?) -> Unit)? = null
+    var onPlayedLogUpdated: ((List<Pair<String, String>>) -> Unit)? = null
+    var onJoinStateChanged: ((pending: Boolean) -> Unit)? = null
+    var onAppApprovalChanged: ((enabled: Boolean) -> Unit)? = null
+    var onCrossfadeChanged: ((ms: Int) -> Unit)? = null
+    var onCalibrationStart: ((untilMs: Long) -> Unit)? = null
+    var onCalibrationChirp: ((times: List<Long>) -> Unit)? = null
+    var onCalibrationPlan: ((slots: org.json.JSONArray, untilMs: Long) -> Unit)? = null
+    var onCalibrationApply: ((deltaMs: Long) -> Unit)? = null
+    var onSyncTest: ((enabled: Boolean) -> Unit)? = null
+    @Volatile var lastCrossfadeMs: Int = 0
+
+    // Issued by the server: authorises uploads and lets us back in without a new approval
+    @Volatile var sessionToken: String = ""
+    @Volatile var isJoinPending: Boolean = false
+    @Volatile var lastAppApproval: Boolean = false
+    @Volatile var lastPreloadUrl: String? = null
+
+    data class JoinRequest(val requestId: String, val name: String, val device: String, val isWeb: Boolean = true)
+
+    // Last values received from the server. Messages can arrive before the UI has wired its
+    // callbacks (they are sent right after connect), so the UI reads these when it attaches.
+    @Volatile var lastGuestsCanControl: Boolean = false
+    @Volatile var lastCanMegaphone: Boolean = false
+    @Volatile var lastCanControl: Boolean = false
+    @Volatile var lastJoinRequests: List<JoinRequest> = emptyList()
+    // Re-sent on every (re)connect because the server forgets it with the old socket
+    @Volatile var fallbackEligible: Boolean = false
+
+    /** True if the server ended our membership for good (kick, session ended, ...) – don't auto-reconnect. */
+    val isFinalClose: Boolean get() = finalCloseReason != null
+    @Volatile var finalCloseReason: String? = null
+        private set
+
+    /** Takes over all UI callbacks of a previous client so a reconnect keeps every feature working. */
+    fun copyCallbacksFrom(old: MusicSyncClient) {
+        onStateUpdated = old.onStateUpdated
+        onListsUpdated = old.onListsUpdated
+        onPlayReceived = old.onPlayReceived
+        onPauseReceived = old.onPauseReceived
+        onPrepareReceived = old.onPrepareReceived
+        onTimeOffsetCalculated = old.onTimeOffsetCalculated
+        onGuestPermissionsChanged = old.onGuestPermissionsChanged
+        onSyncStatsUpdated = old.onSyncStatsUpdated
+        onVoiceStart = old.onVoiceStart
+        onVoiceChunk = old.onVoiceChunk
+        onVoiceEnd = old.onVoiceEnd
+        onPartyLightChanged = old.onPartyLightChanged
+        onMyPermissionsChanged = old.onMyPermissionsChanged
+        onSessionStatsUpdated = old.onSessionStatsUpdated
+        onFallbackRequested = old.onFallbackRequested
+        onJoinRequests = old.onJoinRequests
+        onVoiceBusy = old.onVoiceBusy
+        onPreloadReceived = old.onPreloadReceived
+        onPlayedLogUpdated = old.onPlayedLogUpdated
+        onJoinStateChanged = old.onJoinStateChanged
+        onAppApprovalChanged = old.onAppApprovalChanged
+        onCrossfadeChanged = old.onCrossfadeChanged
+        onCalibrationStart = old.onCalibrationStart
+        onCalibrationChirp = old.onCalibrationChirp
+        onCalibrationPlan = old.onCalibrationPlan
+        onCalibrationApply = old.onCalibrationApply
+        onSyncTest = old.onSyncTest
+        sessionToken = old.sessionToken
+        fallbackEligible = old.fallbackEligible
+    }
     
     private data class SyncSample(val rtt: Long, val offset: Long, val time: Long = System.currentTimeMillis())
     private val syncSamples = mutableListOf<SyncSample>()
@@ -49,9 +117,11 @@ class MusicSyncClient(
         val joinMsg = JSONObject().apply {
             put("type", "ACTION_JOIN")
             put("username", username)
+            if (sessionToken.isNotBlank()) put("token", sessionToken)
         }
         send(joinMsg.toString())
-        
+        if (fallbackEligible) sendRegisterFallback(true)
+
         pingServer(resetHistory = true)
     }
 
@@ -64,7 +134,7 @@ class MusicSyncClient(
             // commands (PLAY/STATE_UPDATE) are not delayed while re-measuring NTP.
         }
         val t1Nano = System.nanoTime()
-        val t1Ms = System.currentTimeMillis()
+        val t1Ms = JamClock.nowMs()
         pingStartTimeNano = t1Nano
         val msg = JSONObject().apply {
             put("type", "PING_TIME")
@@ -85,8 +155,8 @@ class MusicSyncClient(
     }
 
     override fun onMessage(message: String) {
-        val json = JSONObject(message)
-        val type = json.getString("type")
+        val json = try { JSONObject(message) } catch (_: Exception) { return }
+        val type = json.optString("type")
 
         // Only commands needing synchronized time should be queued until we have the offset.
         if ((type == "PLAY" || type == "STATE_UPDATE") && !isTimeSynced) {
@@ -103,7 +173,7 @@ class MusicSyncClient(
             }
             "PONG_TIME" -> {
                 val t4Nano = System.nanoTime()
-                val t4Ms = System.currentTimeMillis()
+                val t4Ms = JamClock.nowMs()
                 val t1Nano = json.optLong("clientSendNano", pingStartTimeNano)
                 val t1Ms = json.optLong("clientSendMs", t4Ms - ((t4Nano - t1Nano) / 1_000_000L))
                 val t2Ms = json.optLong("serverReceiveMs", json.optLong("serverTimeMs", t4Ms))
@@ -134,7 +204,12 @@ class MusicSyncClient(
                     }
 
                     val bestSample = validSamples.minByOrNull { it.rtt } ?: sortedByRtt.first()
-                    serverTimeOffset = bestSample.offset
+                    // After the initial sync, small changes are blended in (each re-measurement used to
+                    // shift the timeline by a few ms and the playback kept chasing it); big ones still jump
+                    val delta = bestSample.offset - serverTimeOffset
+                    serverTimeOffset = if (isInitialSyncCompleted && kotlin.math.abs(delta) < 40) {
+                        serverTimeOffset + Math.round(delta * 0.25)
+                    } else bestSample.offset
                     onSyncStatsUpdated?.invoke(serverTimeOffset, bestSample.rtt)
                 }
 
@@ -210,6 +285,13 @@ class MusicSyncClient(
                     val addedByObj = json.getJSONObject("trackAddedBy")
                     addedByObj.keys().forEach { key -> addedByMap[key] = addedByObj.getString(key) }
                 }
+                json.optJSONArray("playedLog")?.let { arr ->
+                    val log = (0 until arr.length()).map { i ->
+                        val o = arr.getJSONObject(i)
+                        o.optString("title") to o.optString("by")
+                    }
+                    onPlayedLogUpdated?.invoke(log)
+                }
                 val startTimeMs = json.optLong("sessionStartTimeMs", 0L)
                 val totalPlayed = json.optInt("totalSongsPlayed", 0)
                 if (startTimeMs > 0L) {
@@ -225,7 +307,8 @@ class MusicSyncClient(
                 val trackUrl = json.getString("trackUrl")
                 val startedAtMs = json.getLong("startedAtMs")
                 val pauseOffsetMs = json.getLong("pauseOffsetMs")
-                onPlayReceived(trackUrl, startedAtMs, pauseOffsetMs)
+                val fromTrackUrl = if (json.isNull("fromTrackUrl")) null else json.optString("fromTrackUrl").ifBlank { null }
+                onPlayReceived(trackUrl, startedAtMs, pauseOffsetMs, json.optInt("crossfadeMs", 0), fromTrackUrl)
             }
             "PAUSE" -> {
                 val pauseOffsetMs = json.getLong("pauseOffsetMs")
@@ -233,6 +316,7 @@ class MusicSyncClient(
             }
             "GUEST_PERMISSIONS_CHANGED" -> {
                 val allow = json.getBoolean("guestsCanControl")
+                lastGuestsCanControl = allow
                 onGuestPermissionsChanged(allow)
             }
             "VOICE_START" -> {
@@ -242,6 +326,9 @@ class MusicSyncClient(
             "VOICE_END" -> {
                 onVoiceEnd?.invoke()
             }
+            "VOICE_BUSY" -> {
+                onVoiceBusy?.invoke(json.optString("speaker", "Jemand"))
+            }
             "PARTY_LIGHT_UPDATE" -> {
                 val enabled = json.optBoolean("enabled", false)
                 onPartyLightChanged?.invoke(enabled)
@@ -249,10 +336,60 @@ class MusicSyncClient(
             "PARTICIPANT_PERMISSIONS_UPDATED" -> {
                 val canMegaphone = json.optBoolean("canMegaphone", false)
                 val canControl = json.optBoolean("canControl", false)
+                lastCanMegaphone = canMegaphone
+                lastCanControl = canControl
                 onMyPermissionsChanged?.invoke(canMegaphone, canControl)
             }
             "REQUEST_FALLBACK_TRACK" -> {
                 onFallbackRequested?.invoke()
+            }
+            "SESSION_TOKEN" -> {
+                sessionToken = json.optString("token", sessionToken)
+            }
+            "JOIN_PENDING" -> {
+                isJoinPending = true
+                onJoinStateChanged?.invoke(true)
+            }
+            "JOIN_APPROVED" -> {
+                sessionToken = json.optString("token", sessionToken)
+                isJoinPending = false
+                onJoinStateChanged?.invoke(false)
+            }
+            "CROSSFADE_CHANGED" -> {
+                lastCrossfadeMs = json.optInt("ms", 0)
+                onCrossfadeChanged?.invoke(lastCrossfadeMs)
+            }
+            "CALIBRATION_START" -> onCalibrationStart?.invoke(json.optLong("untilMs"))
+            "CALIBRATION_CHIRP" -> {
+                val arr = json.optJSONArray("times") ?: org.json.JSONArray()
+                onCalibrationChirp?.invoke((0 until arr.length()).map { arr.getLong(it) })
+            }
+            "CALIBRATION_PLAN" -> onCalibrationPlan?.invoke(json.optJSONArray("slots") ?: org.json.JSONArray(), json.optLong("untilMs"))
+            "CALIBRATION_APPLY" -> onCalibrationApply?.invoke(json.optLong("deltaMs"))
+            "SYNC_TEST" -> onSyncTest?.invoke(json.optBoolean("enabled", false))
+            "APP_APPROVAL_CHANGED" -> {
+                lastAppApproval = json.optBoolean("enabled", false)
+                onAppApprovalChanged?.invoke(lastAppApproval)
+            }
+            "PRELOAD" -> {
+                val url = if (json.isNull("trackUrl")) null else json.optString("trackUrl").ifBlank { null }
+                lastPreloadUrl = url
+                onPreloadReceived?.invoke(url)
+            }
+            "JOIN_REQUESTS" -> {
+                val arr = json.optJSONArray("requests")
+                val list = mutableListOf<JoinRequest>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        list.add(JoinRequest(o.getString("requestId"), o.optString("name", "Gast"), o.optString("device", "Browser"), o.optBoolean("isWeb", true)))
+                    }
+                }
+                lastJoinRequests = list
+                onJoinRequests?.invoke(list)
+            }
+            "KICKED" -> {
+                finalCloseReason = LocalMusicServer.CLOSE_KICKED
             }
         }
     }
@@ -265,6 +402,11 @@ class MusicSyncClient(
 
     override fun onClose(code: Int, reason: String?, remote: Boolean) {
         println("Verbindung getrennt. Grund: $reason (intentional=$intentionalClose)")
+        if (reason in setOf(
+                LocalMusicServer.CLOSE_SESSION_ENDED, LocalMusicServer.CLOSE_KICKED,
+                LocalMusicServer.CLOSE_DENIED, LocalMusicServer.CLOSE_NO_SESSION)) {
+            finalCloseReason = reason
+        }
         try {
             periodicSyncFuture?.cancel(true)
             periodicSyncFuture = null
@@ -305,10 +447,11 @@ class MusicSyncClient(
         if (isOpen) send(msg.toString())
     }
 
-    fun sendTrackReady(trackUrl: String) {
+    fun sendTrackReady(trackUrl: String, durationMs: Long = 0L) {
         val msg = JSONObject().apply {
             put("type", "ACTION_TRACK_READY")
             put("trackUrl", trackUrl)
+            if (durationMs > 0L) put("durationMs", durationMs)
         }
         if (isOpen) send(msg.toString())
     }
@@ -436,7 +579,45 @@ class MusicSyncClient(
         send(msg.toString())
     }
 
+    fun sendSetCrossfade(ms: Int) {
+        if (!isOpen) return
+        send(JSONObject().put("type", "ACTION_SET_CROSSFADE").put("ms", ms).toString())
+    }
+
+    fun sendSyncTest(enabled: Boolean) {
+        if (!isOpen) return
+        send(JSONObject().put("type", "ACTION_SYNC_TEST").put("enabled", enabled).toString())
+    }
+
+    fun sendCalibrationStart() {
+        if (!isOpen) return
+        send(JSONObject().put("type", "ACTION_CALIBRATION_START").toString())
+    }
+
+    fun sendCalibrationResult(results: List<Pair<String, Long?>>) {
+        if (!isOpen) return
+        val arr = org.json.JSONArray()
+        results.forEach { (id, delta) -> arr.put(JSONObject().put("id", id).put("deltaMs", delta ?: JSONObject.NULL)) }
+        send(JSONObject().put("type", "ACTION_CALIBRATION_RESULT").put("results", arr).toString())
+    }
+
+    fun sendSetAppApproval(enabled: Boolean) {
+        if (!isOpen) return
+        send(JSONObject().put("type", "ACTION_SET_APP_APPROVAL").put("enabled", enabled).toString())
+    }
+
+    fun sendRespondJoin(requestId: String, accept: Boolean) {
+        if (!isOpen) return
+        val msg = JSONObject().apply {
+            put("type", "ACTION_RESPOND_JOIN")
+            put("requestId", requestId)
+            put("accept", accept)
+        }
+        send(msg.toString())
+    }
+
     fun sendRegisterFallback(eligible: Boolean) {
+        fallbackEligible = eligible
         if (!isOpen) return
         val msg = JSONObject().apply {
             put("type", "ACTION_REGISTER_FALLBACK")
